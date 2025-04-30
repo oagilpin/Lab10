@@ -1,0 +1,18 @@
+title: "CSU ESS330 Lab 10"
+author:
+  name: "Olivia Gilpin"
+  email: "ogilpin@colostate.edu"
+date: "4-30-2025"  
+project: 
+  output-dir: docs
+  type: website
+format: 
+  html: 
+    self-contained: true
+    toc: true
+    toc-depth: 5
+    toc-location: left 
+    toc-title: "Table of Contents"
+execute:
+  echo: true
+editor: visual
