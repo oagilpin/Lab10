@@ -81,7 +81,6 @@ df <- data.frame(name = state.name,
 head(df)
 ```
 ```{r}
-# Geographic Coordinate System (GCS)
 (df_sf_gcs = st_as_sf(df, 
                       coords = c("X", "Y"), 
                       crs = 4269))
@@ -93,8 +92,6 @@ ggplot() +
   theme_linedraw()
 ```
 ```{r}
-# Projected Coordinate System (PCS)
-# st_transforms converts from one reference system to another
 (df_sf_pcs = st_transform(df_sf_gcs, 5070))
 ```
 ```{r}
@@ -145,7 +142,7 @@ flextable(farthest_from_usa |>
 ##### 2.2 - Distance to States (km)
 ```{r}
 state_borders <- states |>
-  st_combine() |>  # Preserves state boundaries
+  st_combine() |>  
   st_cast("MULTILINESTRING")
 
 cities <- cities |>
@@ -558,7 +555,6 @@ flextable(border_zone_stats) %>%
 
 ###### Refined 4.3
 ```{r}
-# Load required libraries
 library(sf)
 library(ggplot2)
 library(dplyr)
@@ -568,20 +564,16 @@ library(cowplot)
 library(flextable)
 library(units)
 
-# Define equal area projection
-eqdc <- 5070 # EPSG code for USA Contiguous Albers Equal Area Conic
+eqdc <- 5070 
 
-# Load US states data
 states_all <- USAboundaries::us_states(resolution = "low") |>
   filter(!state_abbr %in% c("PR")) |>  
   st_transform(eqdc)
 
-# Create USA border
 usa_border_all <- states_all |>
   st_union() |> 
   st_cast("MULTILINESTRING")
 
-# Process cities data
 cities_all <- read_csv("data/uscities.csv", show_col_types = FALSE) |>
   st_as_sf(coords = c("lng", "lat"), crs = 4326) |>
   st_transform(eqdc) |>
@@ -591,17 +583,14 @@ cities_all <- read_csv("data/uscities.csv", show_col_types = FALSE) |>
     dist_to_usa_border = drop_units(dist_to_usa_border)
   )
 
-# Filter cities within 100 miles (160 km) of border
 border_zone_cities_all <- cities_all |>
   filter(dist_to_usa_border <= 160)
 
-# Get most populous city in each state within border zone
 most_populous_by_state_all <- border_zone_cities_all |>
   group_by(state_name) |>
   slice_max(population, n = 1) |>
   ungroup()
 
-# Create main map (contiguous US)
 main_map <- ggplot() +
   geom_sf(data = states_all |> filter(!state_abbr %in% c("HI", "AK")), 
           fill = "lightgray", color = "white", size = 0.2) +
@@ -635,7 +624,6 @@ main_map <- ggplot() +
   theme_minimal() +
   theme(legend.position = "right")
 
-# Create Alaska map
 alaska_map <- ggplot() +
   geom_sf(data = states_all |> filter(state_abbr == "AK"), 
           fill = "lightgray", color = "white", size = 0.2) +
@@ -672,7 +660,6 @@ alaska_map <- ggplot() +
   ) +
   labs(title = "Alaska")
 
-# Create fixed Hawaii map with guaranteed label visibility
 hawaii_map <- ggplot() +
   geom_sf(data = states_all |> filter(state_abbr == "HI"), 
           fill = "lightgray", color = "white", size = 0.2) +
@@ -686,51 +673,46 @@ hawaii_map <- ggplot() +
     high = "darkred",
     limits = c(0, 160)
   ) +
-  # Make blue point larger and more visible
   geom_sf(data = most_populous_by_state_all |> filter(state_name == "Hawaii"), 
           color = "blue", 
           size = 6) +
-  # Manual label placement as fallback if geom_label_repel fails
   annotate("label", 
-           x = 0, y = 0,  # These will be overridden by the manual placement below
+           x = 0, y = 0,  
            label = "Honolulu, Hawaii",
            color = "black",
            fill = "white",
            size = 3.5,
            fontface = "bold") +
-  # Fix label placement with more aggressive parameters
   geom_label_repel(
     data = most_populous_by_state_all |> filter(state_name == "Hawaii"),
     aes(geometry = geometry, label = paste0(city, ", ", state_name)),
     stat = "sf_coordinates",
-    size = 3.5,             # Larger text size
-    box.padding = 1.0,      # Much more space around text
-    point.padding = 1.0,    # More distance from point
-    segment.size = 1.0,     # Thicker line
-    min.segment.length = 0, # Always show segment
-    force = 100,            # Much stronger force to push label away
-    max.overlaps = 100,     # Ensure label is shown
-    nudge_x = 2.0,          # Push label right
-    nudge_y = -2.0,         # Push label down
-    direction = "both",     # Allow movement in all directions
-    seed = 9999,            # Different seed for better placement
-    bg.color = "white",     # White background for readability
-    bg.r = 0.2,             # Rounded corners
-    fill = "white",         # White background for readability
-    color = "black",        # Black text
-    fontface = "bold"       # Bold text
+    size = 3.5,             
+    box.padding = 1.0,      
+    point.padding = 1.0,    
+    segment.size = 1.0,     
+    min.segment.length = 0, 
+    force = 100,            
+    max.overlaps = 100,     
+    nudge_x = 2.0,          
+    nudge_y = -2.0,         
+    direction = "both",     
+    seed = 9999,            
+    bg.color = "white",     
+    bg.r = 0.2,            
+    fill = "white",         
+    color = "black",        
+    fontface = "bold"       
   ) +
   theme_void() +
   theme(
     legend.position = "none",
     plot.background = element_rect(fill = "white", color = "black", linewidth = 0.8),
-    plot.margin = margin(15, 15, 15, 15) # Increased margins further
+    plot.margin = margin(15, 15, 15, 15) 
   ) +
   labs(title = "Hawaii") +
-  # Add a coordinator_fixed to maintain aspect ratio
   coord_sf(expand = TRUE, xlim = c(-162, -154), ylim = c(18, 23))
 
-# Combine maps with improved Hawaii inset
 final_map <- ggdraw() +
   draw_plot(main_map) +
   draw_plot(alaska_map, x = 0.08, y = 0.08, width = 0.2, height = 0.2) +
@@ -744,10 +726,8 @@ final_map <- ggdraw() +
   draw_label("Data source: US Cities Database", 
              x = 0.85, y = 0.02, size = 8, color = "gray30")
 
-# Print final map
 print(final_map)
 
-# Border zone statistics
 border_zone_stats <- data.frame(
   Metric = c("Number of States with Cities in Border Zone", 
              "Number of Cities in Border Zone", 
@@ -760,7 +740,6 @@ border_zone_stats <- data.frame(
                           sum(cities_all$population, na.rm = TRUE)) * 100, 2), "%"))
 )
 
-# Print statistics
 flextable(border_zone_stats) %>%
   autofit()
 ```
