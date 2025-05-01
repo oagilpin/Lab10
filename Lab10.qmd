@@ -11,7 +11,7 @@ format:
   html: 
     self-contained: true
     toc: true
-    toc-depth: 5
+    toc-depth: 6
     toc-location: left 
     toc-title: "Table of Contents"
 execute:
@@ -413,57 +413,359 @@ ggplot() +
 
 ##### 4.3 : Instead of labeling the 10 most populous cites, label the most populous city in each state within the Danger Zone.
 ```{r}
-# Find the most populous city in each state within the border zone
-most_populous_by_state <- border_zone_cities %>%
-  group_by(state_name) %>%
-  slice_max(population, n = 1) %>%
+states_all <- USAboundaries::us_states(resolution = "low") |>
+  filter(!state_abbr %in% c("PR")) |>  
+  st_transform(eqdc)
+
+usa_border_all <- states_all |>
+  st_union() |> 
+  st_cast("MULTILINESTRING")
+
+cities_all <- read_csv("data/uscities.csv", show_col_types = FALSE) |>
+  st_as_sf(coords = c("lng", "lat"), crs = 4326) |>
+  st_transform(eqdc) |>
+  mutate(
+    dist_to_usa_border = st_distance(geometry, usa_border_all),
+    dist_to_usa_border = set_units(dist_to_usa_border, "km"),
+    dist_to_usa_border = drop_units(dist_to_usa_border)
+  )
+
+border_zone_cities_all <- cities_all |>
+  filter(dist_to_usa_border <= 160)
+
+most_populous_by_state_all <- border_zone_cities_all |>
+  group_by(state_name) |>
+  slice_max(population, n = 1) |>
   ungroup()
 
-# Create map with most populous city per state - with further increased max.overlaps
-ggplot() +
-  # Base map of states
-  geom_sf(data = states, fill = "lightgray", color = "white", size = 0.2) +
-  # All cities as small points
-  geom_sf(data = cities, color = "gray", alpha = 0.2, size = 0.1) +
-  # Border zone cities with color gradient
-  geom_sf(data = border_zone_cities, 
+library(cowplot)
+
+main_map <- ggplot() +
+  geom_sf(data = states_all |> filter(!state_abbr %in% c("HI", "AK")), 
+          fill = "lightgray", color = "white", size = 0.2) +
+  geom_sf(data = border_zone_cities_all |> filter(!state_name %in% c("Hawaii", "Alaska")), 
           aes(color = dist_to_usa_border), 
           alpha = 0.7, 
           size = 0.5) +
-  # Color scale from orange to dark red
   scale_color_gradient(
     name = "Distance to Border (km)",
     low = "orange",
     high = "darkred",
     limits = c(0, 160)
   ) +
-  # Most populous city per state in border zone
-  geom_sf(data = most_populous_by_state, 
+  geom_sf(data = most_populous_by_state_all |> filter(!state_name %in% c("Hawaii", "Alaska")), 
           color = "blue", 
           size = 2) +
-  # Labels for most populous city per state with increased max.overlaps
   geom_label_repel(
-    data = most_populous_by_state,
+    data = most_populous_by_state_all |> filter(!state_name %in% c("Hawaii", "Alaska")),
     aes(geometry = geometry, label = paste0(city, ", ", state_name)),
     stat = "sf_coordinates",
-    size = 2.5,
-    box.padding = 0.5,
-    point.padding = 0.3,
+    size = 2.2,
+    box.padding = 0.3,
+    point.padding = 0.2,
     force = 5,
-    max.overlaps = Inf, # Set to Inf to show all labels
+    max.overlaps = Inf,
     min.segment.length = 0.1,
-    nudge_x = 0.5,
-    nudge_y = 0.5,
-    segment.size = 0.3
+    seed = 42
   ) +
-  # Theme and titles
   theme_minimal() +
-  labs(
-    title = "U.S. Cities Within 100 Miles of External Borders",
-    subtitle = "Blue points represent the most populous city in each state within the Border Zone",
-    caption = "Data source: US Cities Database"
+  theme(legend.position = "right")
+
+alaska_map <- ggplot() +
+  geom_sf(data = states_all |> filter(state_abbr == "AK"), 
+          fill = "lightgray", color = "white", size = 0.2) +
+  geom_sf(data = border_zone_cities_all |> filter(state_name == "Alaska"), 
+          aes(color = dist_to_usa_border), 
+          alpha = 0.7, 
+          size = 0.5) +
+  scale_color_gradient(
+    name = "Distance to Border (km)",
+    low = "orange",
+    high = "darkred",
+    limits = c(0, 160)
   ) +
-  theme(plot.title = element_text(face = "bold"))
+  geom_sf(data = most_populous_by_state_all |> filter(state_name == "Alaska"), 
+          color = "blue", 
+          size = 2) +
+  geom_label_repel(
+    data = most_populous_by_state_all |> filter(state_name == "Alaska"),
+    aes(geometry = geometry, label = paste0(city, ", ", state_name)),
+    stat = "sf_coordinates",
+    size = 2.2,
+    box.padding = 0.3,
+    point.padding = 0.2
+  ) +
+  theme_void() +
+  theme(legend.position = "none") +
+  labs(title = "Alaska")
+
+hawaii_map <- ggplot() +
+  geom_sf(data = states_all |> filter(state_abbr == "HI"), 
+          fill = "lightgray", color = "white", size = 0.2) +
+  geom_sf(data = border_zone_cities_all |> filter(state_name == "Hawaii"), 
+          aes(color = dist_to_usa_border), 
+          alpha = 0.7, 
+          size = 0.5) +
+  scale_color_gradient(
+    name = "Distance to Border (km)",
+    low = "orange",
+    high = "darkred",
+    limits = c(0, 160)
+  ) +
+  geom_sf(data = most_populous_by_state_all |> filter(state_name == "Hawaii"), 
+          color = "blue", 
+          size = 2) +
+  geom_label_repel(
+    data = most_populous_by_state_all |> filter(state_name == "Hawaii"),
+    aes(geometry = geometry, label = paste0(city, ", ", state_name)),
+    stat = "sf_coordinates",
+    size = 2.2,
+    box.padding = 0.3,
+    point.padding = 0.2
+  ) +
+  theme_void() +
+  theme(legend.position = "none") +
+  labs(title = "Hawaii")
+
+final_map <- ggdraw() +
+  draw_plot(main_map) +
+  draw_plot(alaska_map, x = 0.15, y = 0.1, width = 0.2, height = 0.2) +
+  draw_plot(hawaii_map, x = 0.5, y = 0.1, width = 0.15, height = 0.15) +
+  draw_label("U.S. Cities Within 100 Miles of External Borders", 
+             x = 0.5, y = 0.98, size = 16, fontface = "bold", hjust = 0.5) +
+  draw_label("Blue points represent the most populous city in each state within the Border Zone", 
+             x = 0.5, y = 0.95, size = 12, hjust = 0.5) +
+  draw_label("Data source: US Cities Database", 
+             x = 0.85, y = 0.02, size = 8, color = "gray30")
+
+print(final_map)
+
+border_zone_stats <- data.frame(
+  Metric = c("Number of States with Cities in Border Zone", 
+             "Number of Cities in Border Zone", 
+             "Population in Border Zone", 
+             "Percentage of Total Population"),
+  Value = c(n_distinct(border_zone_cities_all$state_name),
+            nrow(border_zone_cities_all),
+            format(sum(border_zone_cities_all$population, na.rm = TRUE), big.mark = ","),
+            paste0(round((sum(border_zone_cities_all$population, na.rm = TRUE) / 
+                          sum(cities_all$population, na.rm = TRUE)) * 100, 2), "%"))
+)
+
+flextable(border_zone_stats) %>%
+  autofit()
 ```
+
+###### Refined 4.3
+```{r}
+# Load required libraries
+library(sf)
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(ggrepel)
+library(cowplot)
+library(flextable)
+library(units)
+
+# Define equal area projection
+eqdc <- 5070 # EPSG code for USA Contiguous Albers Equal Area Conic
+
+# Load US states data
+states_all <- USAboundaries::us_states(resolution = "low") |>
+  filter(!state_abbr %in% c("PR")) |>  
+  st_transform(eqdc)
+
+# Create USA border
+usa_border_all <- states_all |>
+  st_union() |> 
+  st_cast("MULTILINESTRING")
+
+# Process cities data
+cities_all <- read_csv("data/uscities.csv", show_col_types = FALSE) |>
+  st_as_sf(coords = c("lng", "lat"), crs = 4326) |>
+  st_transform(eqdc) |>
+  mutate(
+    dist_to_usa_border = st_distance(geometry, usa_border_all),
+    dist_to_usa_border = set_units(dist_to_usa_border, "km"),
+    dist_to_usa_border = drop_units(dist_to_usa_border)
+  )
+
+# Filter cities within 100 miles (160 km) of border
+border_zone_cities_all <- cities_all |>
+  filter(dist_to_usa_border <= 160)
+
+# Get most populous city in each state within border zone
+most_populous_by_state_all <- border_zone_cities_all |>
+  group_by(state_name) |>
+  slice_max(population, n = 1) |>
+  ungroup()
+
+# Create main map (contiguous US)
+main_map <- ggplot() +
+  geom_sf(data = states_all |> filter(!state_abbr %in% c("HI", "AK")), 
+          fill = "lightgray", color = "white", size = 0.2) +
+  geom_sf(data = border_zone_cities_all |> filter(!state_name %in% c("Hawaii", "Alaska")), 
+          aes(color = dist_to_usa_border), 
+          alpha = 0.7, 
+          size = 0.5) +
+  scale_color_gradient(
+    name = "Distance to Border (km)",
+    low = "orange",
+    high = "darkred",
+    limits = c(0, 160)
+  ) +
+  geom_sf(data = most_populous_by_state_all |> filter(!state_name %in% c("Hawaii", "Alaska")), 
+          color = "blue", 
+          size = 2) +
+  geom_label_repel(
+    data = most_populous_by_state_all |> filter(!state_name %in% c("Hawaii", "Alaska")),
+    aes(geometry = geometry, label = paste0(city, ", ", state_name)),
+    stat = "sf_coordinates",
+    size = 2.2,
+    box.padding = 0.3,
+    point.padding = 0.2,
+    force = 5,
+    max.overlaps = Inf,
+    min.segment.length = 0.1,
+    seed = 42,
+    bg.color = "white",
+    bg.r = 0.15
+  ) +
+  theme_minimal() +
+  theme(legend.position = "right")
+
+# Create Alaska map
+alaska_map <- ggplot() +
+  geom_sf(data = states_all |> filter(state_abbr == "AK"), 
+          fill = "lightgray", color = "white", size = 0.2) +
+  geom_sf(data = border_zone_cities_all |> filter(state_name == "Alaska"), 
+          aes(color = dist_to_usa_border), 
+          alpha = 0.7, 
+          size = 0.5) +
+  scale_color_gradient(
+    name = "Distance to Border (km)",
+    low = "orange",
+    high = "darkred",
+    limits = c(0, 160)
+  ) +
+  geom_sf(data = most_populous_by_state_all |> filter(state_name == "Alaska"), 
+          color = "blue", 
+          size = 3) +
+  geom_label_repel(
+    data = most_populous_by_state_all |> filter(state_name == "Alaska"),
+    aes(geometry = geometry, label = paste0(city, ", ", state_name)),
+    stat = "sf_coordinates",
+    size = 2.2,
+    box.padding = 0.3,
+    point.padding = 0.2,
+    force = 5,
+    seed = 42,
+    bg.color = "white",
+    bg.r = 0.15
+  ) +
+  theme_void() +
+  theme(
+    legend.position = "none",
+    plot.background = element_rect(fill = "white", color = "black", linewidth = 0.8),
+    plot.margin = margin(5, 5, 5, 5)
+  ) +
+  labs(title = "Alaska")
+
+# Create fixed Hawaii map with guaranteed label visibility
+hawaii_map <- ggplot() +
+  geom_sf(data = states_all |> filter(state_abbr == "HI"), 
+          fill = "lightgray", color = "white", size = 0.2) +
+  geom_sf(data = border_zone_cities_all |> filter(state_name == "Hawaii"), 
+          aes(color = dist_to_usa_border), 
+          alpha = 0.7, 
+          size = 1) +
+  scale_color_gradient(
+    name = "Distance to Border (km)",
+    low = "orange",
+    high = "darkred",
+    limits = c(0, 160)
+  ) +
+  # Make blue point larger and more visible
+  geom_sf(data = most_populous_by_state_all |> filter(state_name == "Hawaii"), 
+          color = "blue", 
+          size = 6) +
+  # Manual label placement as fallback if geom_label_repel fails
+  annotate("label", 
+           x = 0, y = 0,  # These will be overridden by the manual placement below
+           label = "Honolulu, Hawaii",
+           color = "black",
+           fill = "white",
+           size = 3.5,
+           fontface = "bold") +
+  # Fix label placement with more aggressive parameters
+  geom_label_repel(
+    data = most_populous_by_state_all |> filter(state_name == "Hawaii"),
+    aes(geometry = geometry, label = paste0(city, ", ", state_name)),
+    stat = "sf_coordinates",
+    size = 3.5,             # Larger text size
+    box.padding = 1.0,      # Much more space around text
+    point.padding = 1.0,    # More distance from point
+    segment.size = 1.0,     # Thicker line
+    min.segment.length = 0, # Always show segment
+    force = 100,            # Much stronger force to push label away
+    max.overlaps = 100,     # Ensure label is shown
+    nudge_x = 2.0,          # Push label right
+    nudge_y = -2.0,         # Push label down
+    direction = "both",     # Allow movement in all directions
+    seed = 9999,            # Different seed for better placement
+    bg.color = "white",     # White background for readability
+    bg.r = 0.2,             # Rounded corners
+    fill = "white",         # White background for readability
+    color = "black",        # Black text
+    fontface = "bold"       # Bold text
+  ) +
+  theme_void() +
+  theme(
+    legend.position = "none",
+    plot.background = element_rect(fill = "white", color = "black", linewidth = 0.8),
+    plot.margin = margin(15, 15, 15, 15) # Increased margins further
+  ) +
+  labs(title = "Hawaii") +
+  # Add a coordinator_fixed to maintain aspect ratio
+  coord_sf(expand = TRUE, xlim = c(-162, -154), ylim = c(18, 23))
+
+# Combine maps with improved Hawaii inset
+final_map <- ggdraw() +
+  draw_plot(main_map) +
+  draw_plot(alaska_map, x = 0.08, y = 0.08, width = 0.2, height = 0.2) +
+  draw_plot(hawaii_map, x = 0.75, y = 0.08, width = 0.22, height = 0.3) + # Increased height
+  draw_label("U.S. Cities Within 100 Miles of External Borders (Border Zone)", 
+             x = 0.5, y = 0.98, size = 16, fontface = "bold", hjust = 0.5) +
+  draw_label("Blue points represent the most populous city in each state within the Border Zone", 
+             x = 0.5, y = 0.95, size = 12, hjust = 0.5) +
+  draw_label("Note: Not all states have cities within the Border Zone", 
+             x = 0.5, y = 0.92, size = 10, hjust = 0.5, color = "darkred") +
+  draw_label("Data source: US Cities Database", 
+             x = 0.85, y = 0.02, size = 8, color = "gray30")
+
+# Print final map
+print(final_map)
+
+# Border zone statistics
+border_zone_stats <- data.frame(
+  Metric = c("Number of States with Cities in Border Zone", 
+             "Number of Cities in Border Zone", 
+             "Population in Border Zone", 
+             "Percentage of Total Population"),
+  Value = c(n_distinct(border_zone_cities_all$state_name),
+            nrow(border_zone_cities_all),
+            format(sum(border_zone_cities_all$population, na.rm = TRUE), big.mark = ","),
+            paste0(round((sum(border_zone_cities_all$population, na.rm = TRUE) / 
+                          sum(cities_all$population, na.rm = TRUE)) * 100, 2), "%"))
+)
+
+# Print statistics
+flextable(border_zone_stats) %>%
+  autofit()
+```
+
+
+
 
 
